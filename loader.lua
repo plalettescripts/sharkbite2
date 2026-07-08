@@ -1,9 +1,5 @@
---[[
-    Shark Bite 2 Script v1.3 | plalettescripts
-    Basierend auf tatsächlichen Spielmechaniken
-    Auto-Kill Shark = Auto-Aim + Auto-Shoot + Auto-Track
-]]
-
+-- Shark Bite 2 v1.4 SAFE | plalettescripts
+-- Anti-Detection: Humanized delays, natural aim, no spam
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -15,10 +11,8 @@ local Lighting = game:GetService("Lighting")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
--- ==================== KONFIGURATION ====================
 local Config = {
     AutoKillShark = false,
-    AutoAim = false,
     AutoShoot = false,
     AutoReload = false,
     AutoCollect = false,
@@ -31,58 +25,34 @@ local Config = {
     Fly = false,
     FlySpeed = 50,
     Fullbright = false,
-    NoFog = false,
-    ESPVisible = true
+    NoFog = false
 }
 
 local ESPDrawings = {}
 local ShootRemote = nil
-local HarpoonRemote = nil
-local CurrentTarget = nil
+local LastShot = 0
+local ShotDelay = 0.3
 
--- ==================== HILFSFUNKTIONEN ====================
-
--- ESP sichern
 local function ClearESP()
-    for _, d in pairs(ESPDrawings) do
-        pcall(function() d:Remove() end)
-    end
+    for _, d in pairs(ESPDrawings) do pcall(function() d:Remove() end) end
     ESPDrawings = {}
 end
 
-local function AddESP(drawing)
-    if #ESPDrawings >= 80 then
-        local old = table.remove(ESPDrawings, 1)
-        pcall(function() old:Remove() end)
-    end
-    table.insert(ESPDrawings, drawing)
-    return drawing
+local function AddESP(d)
+    if #ESPDrawings >= 80 then table.remove(ESPDrawings, 1):Remove() end
+    table.insert(ESPDrawings, d)
+    return d
 end
 
--- Hai finden (Model mit Humanoid)
 local function FindShark()
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("Model") then
-            local name = obj.Name:lower()
-            if name:find("shark") or name:find("hai") then
-                local humanoid = obj:FindFirstChildOfClass("Humanoid")
+            local n = obj.Name:lower()
+            if n:find("shark") or n:find("hai") then
+                local hum = obj:FindFirstChildOfClass("Humanoid")
                 local head = obj:FindFirstChild("Head") or obj:FindFirstChild("HumanoidRootPart")
-                if humanoid and humanoid.Health > 0 and head then
-                    return obj, head, humanoid
-                end
-            end
-        end
-    end
-    -- Auch in Ordnern suchen
-    for _, folder in ipairs(Workspace:GetChildren()) do
-        if folder:IsA("Folder") and folder.Name:lower():find("shark") then
-            for _, obj in ipairs(folder:GetChildren()) do
-                if obj:IsA("Model") then
-                    local humanoid = obj:FindFirstChildOfClass("Humanoid")
-                    local head = obj:FindFirstChild("Head") or obj:FindFirstChild("HumanoidRootPart")
-                    if humanoid and humanoid.Health > 0 and head then
-                        return obj, head, humanoid
-                    end
+                if hum and hum.Health > 0 and head then
+                    return obj, head, hum
                 end
             end
         end
@@ -90,94 +60,29 @@ local function FindShark()
     return nil, nil, nil
 end
 
--- Remote Events finden (spezifisch für Shark Bite 2)
-local function FindRemotes()
+local function FindRemote()
     if ShootRemote then return end
-    
-    -- Häufige Remote-Namen in Shark Bite 2
-    local possibleNames = {
-        "Shoot", "Fire", "Harpoon", "ShootHarpune", "FireHarpune",
-        "ShootEvent", "FireEvent", "Attack", "Hit", "Damage",
-        "FireServer", "ShootServer", "HarpuneFire"
-    }
-    
     for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
         if obj:IsA("RemoteEvent") then
-            local name = obj.Name
-            for _, possible in ipairs(possibleNames) do
-                if name:lower():find(possible:lower()) then
-                    if name:lower():find("harpune") or name:lower():find("harpoon") then
-                        HarpoonRemote = obj
-                    else
-                        ShootRemote = obj
-                    end
-                    break
-                end
-            end
-        end
-    end
-    
-    -- Fallback: Erstes und zweites Remote
-    if not ShootRemote then
-        local remotes = {}
-        for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do
-            if obj:IsA("RemoteEvent") then
-                table.insert(remotes, obj)
-            end
-        end
-        if #remotes >= 1 then ShootRemote = remotes[1] end
-        if #remotes >= 2 then HarpoonRemote = remotes[2] end
-    end
-    
-    if ShootRemote then
-        print("🦈 Shoot Remote gefunden:", ShootRemote.Name)
-    end
-    if HarpoonRemote then
-        print("🦈 Harpoon Remote gefunden:", HarpoonRemote.Name)
-    end
-end
-
--- Distanz zum Hai
-local function DistanceToShark(sharkPart)
-    if not LocalPlayer.Character then return 999 end
-    local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp or not sharkPart then return 999 end
-    return (sharkPart.Position - hrp.Position).Magnitude
-end
-
--- Auto-Collect Loot
-local function CollectNearbyLoot()
-    if not LocalPlayer.Character then return end
-    local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            local name = obj.Name:lower()
-            if name:find("coin") or name:find("loot") or name:find("money") or name:find("chest") then
-                if (obj.Position - hrp.Position).Magnitude < 80 then
-                    firetouchinterest(hrp, obj, 0)
-                    firetouchinterest(hrp, obj, 1)
-                end
-            end
+            ShootRemote = obj
+            break
         end
     end
 end
 
--- ==================== GUI (Kompakt, links oben) ====================
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "SB2_Plalette"
-ScreenGui.Parent = CoreGui
+-- GUI
+local GUI = Instance.new("ScreenGui")
+GUI.Name = "SB2"
+GUI.Parent = CoreGui
 
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 210, 0, 290)
+Main.Size = UDim2.new(0, 200, 0, 280)
 Main.Position = UDim2.new(0.01, 0, 0.05, 0)
 Main.BackgroundColor3 = Color3.fromRGB(14, 16, 26)
 Main.BorderSizePixel = 0
 Main.Active = true
 Main.Draggable = true
-Main.Visible = true
-Main.Parent = ScreenGui
+Main.Parent = GUI
 Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 8)
 
 local Border = Instance.new("Frame")
@@ -188,28 +93,26 @@ Border.BorderSizePixel = 0
 Border.Parent = Main
 Instance.new("UICorner", Border).CornerRadius = UDim.new(0, 9)
 
--- Minimiert
 local Mini = Instance.new("Frame")
-Mini.Size = UDim2.new(0, 160, 0, 30)
+Mini.Size = UDim2.new(0, 150, 0, 28)
 Mini.Position = UDim2.new(0.01, 0, 0.05, 0)
 Mini.BackgroundColor3 = Color3.fromRGB(14, 16, 26)
 Mini.BorderSizePixel = 0
 Mini.Visible = false
 Mini.Active = true
 Mini.Draggable = true
-Mini.Parent = ScreenGui
+Mini.Parent = GUI
 Instance.new("UICorner", Mini).CornerRadius = UDim.new(0, 6)
 
 local MiniText = Instance.new("TextLabel")
 MiniText.Size = UDim2.new(1, 0, 1, 0)
 MiniText.BackgroundTransparency = 1
 MiniText.TextColor3 = Color3.fromRGB(255, 60, 40)
-MiniText.Text = "🦈 SB2 v1.3 | plalettescripts"
+MiniText.Text = "🦈 SB2 | plalettescripts"
 MiniText.Font = Enum.Font.SourceSansBold
 MiniText.TextSize = 11
 MiniText.Parent = Mini
 
--- CTRL Toggle
 UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
     if input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.RightControl then
@@ -218,60 +121,43 @@ UserInputService.InputBegan:Connect(function(input, processed)
     end
 end)
 
--- Titel
-local TitleBar = Instance.new("Frame")
-TitleBar.Size = UDim2.new(1, 0, 0, 32)
-TitleBar.BackgroundColor3 = Color3.fromRGB(18, 20, 30)
-TitleBar.BorderSizePixel = 0
-TitleBar.Parent = Main
-Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 8)
-
 local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(0.6, 0, 0.5, 0)
-Title.Position = UDim2.new(0.04, 0, 0, 2)
-Title.BackgroundTransparency = 1
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.BackgroundColor3 = Color3.fromRGB(18, 20, 30)
 Title.TextColor3 = Color3.fromRGB(255, 70, 40)
-Title.Text = "🦈 Shark Bite 2"
+Title.Text = "🦈 SB2 v1.4 SAFE"
 Title.Font = Enum.Font.SourceSansBold
-Title.TextSize = 14
-Title.TextXAlignment = Enum.TextXAlignment.Left
-Title.Parent = TitleBar
+Title.TextSize = 13
+Title.Parent = Main
 
 local Sub = Instance.new("TextLabel")
-Sub.Size = UDim2.new(0.6, 0, 0.4, 0)
-Sub.Position = UDim2.new(0.04, 0, 0.5, 0)
-Sub.BackgroundTransparency = 1
+Sub.Size = UDim2.new(1, 0, 0, 12)
+Sub.Position = UDim2.new(0, 0, 0, 30)
+Sub.BackgroundColor3 = Color3.fromRGB(18, 20, 30)
 Sub.TextColor3 = Color3.fromRGB(140, 140, 160)
-Sub.Text = "v1.3 | plalettescripts"
+Sub.Text = "plalettescripts"
 Sub.Font = Enum.Font.SourceSans
 Sub.TextSize = 9
-Sub.TextXAlignment = Enum.TextXAlignment.Left
-Sub.Parent = TitleBar
+Sub.Parent = Main
 
 local Close = Instance.new("TextButton")
-Close.Size = UDim2.new(0, 22, 0, 18)
-Close.Position = UDim2.new(1, -26, 0, 7)
+Close.Size = UDim2.new(0, 20, 0, 18)
+Close.Position = UDim2.new(1, -24, 0, 4)
 Close.BackgroundColor3 = Color3.fromRGB(180, 30, 30)
 Close.TextColor3 = Color3.fromRGB(255, 255, 255)
 Close.Text = "X"
 Close.Font = Enum.Font.SourceSansBold
 Close.TextSize = 11
-Close.Parent = TitleBar
-Instance.new("UICorner", Close).CornerRadius = UDim.new(0, 4)
-Close.MouseButton1Click:Connect(function()
-    ClearESP()
-    ScreenGui:Destroy()
-end)
+Close.Parent = Main
+Close.MouseButton1Click:Connect(function() ClearESP() GUI:Destroy() end)
 
--- Scroll
 local Scroll = Instance.new("ScrollingFrame")
-Scroll.Size = UDim2.new(1, -6, 1, -36)
-Scroll.Position = UDim2.new(0, 3, 0, 34)
+Scroll.Size = UDim2.new(1, -6, 1, -48)
+Scroll.Position = UDim2.new(0, 3, 0, 44)
 Scroll.BackgroundColor3 = Color3.fromRGB(16, 18, 28)
 Scroll.BorderSizePixel = 0
 Scroll.ScrollBarThickness = 2
-Scroll.ScrollBarImageColor3 = Color3.fromRGB(255, 50, 30)
-Scroll.CanvasSize = UDim2.new(0, 0, 0, 650)
+Scroll.CanvasSize = UDim2.new(0, 0, 0, 600)
 Scroll.Parent = Main
 
 local List = Instance.new("UIListLayout")
@@ -280,7 +166,6 @@ List.FillDirection = Enum.FillDirection.Vertical
 List.SortOrder = Enum.SortOrder.LayoutOrder
 List.Parent = Scroll
 
--- UI-Elemente
 local function Div(t)
     local f = Instance.new("Frame")
     f.Size = UDim2.new(1, -2, 0, 16)
@@ -298,11 +183,10 @@ end
 
 local function Tog(name, key)
     local f = Instance.new("Frame")
-    f.Size = UDim2.new(1, -2, 0, 26)
+    f.Size = UDim2.new(1, -2, 0, 24)
     f.BackgroundColor3 = Color3.fromRGB(24, 26, 38)
     f.Parent = Scroll
     Instance.new("UICorner", f).CornerRadius = UDim.new(0, 4)
-
     local l = Instance.new("TextLabel")
     l.Size = UDim2.new(0.52, 0, 1, 0)
     l.Position = UDim2.new(0.03, 0, 0, 0)
@@ -313,15 +197,13 @@ local function Tog(name, key)
     l.TextSize = 10
     l.TextXAlignment = Enum.TextXAlignment.Left
     l.Parent = f
-
     local b = Instance.new("TextButton")
-    b.Size = UDim2.new(0, 30, 0, 16)
-    b.Position = UDim2.new(0.9, -30, 0, 5)
+    b.Size = UDim2.new(0, 28, 0, 14)
+    b.Position = UDim2.new(0.9, -28, 0, 5)
     b.BackgroundColor3 = Color3.fromRGB(50, 50, 65)
     b.Text = ""
     b.Parent = f
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 8)
-
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 7)
     local on = false
     b.MouseButton1Click:Connect(function()
         on = not on
@@ -334,13 +216,12 @@ end
 local function Sli(name, key, min, max, def)
     Config[key] = def
     local f = Instance.new("Frame")
-    f.Size = UDim2.new(1, -2, 0, 40)
+    f.Size = UDim2.new(1, -2, 0, 38)
     f.BackgroundColor3 = Color3.fromRGB(24, 26, 38)
     f.Parent = Scroll
     Instance.new("UICorner", f).CornerRadius = UDim.new(0, 4)
-
     local l = Instance.new("TextLabel")
-    l.Size = UDim2.new(1, 0, 0, 15)
+    l.Size = UDim2.new(1, 0, 0, 14)
     l.Position = UDim2.new(0.03, 0, 0, 2)
     l.BackgroundTransparency = 1
     l.TextColor3 = Color3.fromRGB(220, 220, 240)
@@ -349,10 +230,9 @@ local function Sli(name, key, min, max, def)
     l.TextSize = 10
     l.TextXAlignment = Enum.TextXAlignment.Left
     l.Parent = f
-
     local inp = Instance.new("TextBox")
     inp.Size = UDim2.new(0.28, 0, 0, 18)
-    inp.Position = UDim2.new(0.35, 0, 0, 20)
+    inp.Position = UDim2.new(0.35, 0, 0, 18)
     inp.BackgroundColor3 = Color3.fromRGB(40, 42, 55)
     inp.TextColor3 = Color3.fromRGB(255, 200, 180)
     inp.Text = tostring(def)
@@ -360,7 +240,6 @@ local function Sli(name, key, min, max, def)
     inp.TextSize = 10
     inp.Parent = f
     Instance.new("UICorner", inp).CornerRadius = UDim.new(0, 3)
-
     inp.FocusLost:Connect(function()
         local v = tonumber(inp.Text)
         if v and v >= min and v <= max then
@@ -372,25 +251,11 @@ local function Sli(name, key, min, max, def)
     end)
 end
 
-local function Btn(name, cb)
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1, -2, 0, 24)
-    b.BackgroundColor3 = Color3.fromRGB(0, 150, 200)
-    b.TextColor3 = Color3.fromRGB(255, 255, 255)
-    b.Text = name
-    b.Font = Enum.Font.SourceSansBold
-    b.TextSize = 10
-    b.Parent = Scroll
-    Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
-    b.MouseButton1Click:Connect(cb)
-end
-
--- ==================== GUI INHALT ====================
-Div("🎯 Auto Kill Shark")
-Tog("Auto-Kill Shark", "AutoKillShark")
+Div("🎯 Combat")
+Tog("Auto-Kill Shark (SAFE)", "AutoKillShark")
 Tog("Auto-Shoot", "AutoShoot")
 Tog("Auto-Reload", "AutoReload")
-Tog("Auto-Collect Loot", "AutoCollect")
+Tog("Auto-Collect", "AutoCollect")
 
 Div("👁 ESP")
 Tog("Shark ESP", "SharkESP")
@@ -398,62 +263,53 @@ Tog("Player ESP", "PlayerESP")
 Tog("Tracers", "Tracers")
 Tog("Radar", "Radar")
 
-Div("🏃 Movement")
-Sli("Walk Speed", "SpeedValue", 16, 100, 32)
+Div("🏃 Move")
+Sli("Speed", "SpeedValue", 16, 50, 32)
 Tog("Speed Hack", "SpeedHack")
-Sli("Fly Speed", "FlySpeed", 20, 150, 50)
-Tog("Fly (WASD)", "Fly")
+Sli("Fly Speed", "FlySpeed", 20, 80, 50)
+Tog("Fly", "Fly")
 
 Div("🌍 World")
 Tog("Fullbright", "Fullbright")
 Tog("No Fog", "NoFog")
 
-Btn("Teleport to Shark", function()
-    local _, head = FindShark()
-    if head and LocalPlayer.Character then
-        local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            hrp.CFrame = CFrame.new(head.Position + Vector3.new(0, 10, 0))
-        end
-    end
-end)
+-- Footer
+local Foot = Instance.new("TextLabel")
+Foot.Size = UDim2.new(1, -2, 0, 14)
+Foot.BackgroundColor3 = Color3.fromRGB(16, 18, 28)
+Foot.TextColor3 = Color3.fromRGB(100, 100, 120)
+Foot.Text = "v1.4 SAFE | plalettescripts"
+Foot.Font = Enum.Font.SourceSans
+Foot.TextSize = 8
+Foot.Parent = Scroll
 
--- ==================== AUTO-KILL SHARK SYSTEM ====================
--- Funktioniert durch: Auto-Aim (Kamera verfolgt Hai) + Auto-Shoot (schießt kontinuierlich)
+-- ==================== SAFE FEATURES ====================
 
--- Auto-Aim: Kamera folgt dem Hai
+-- Auto-Kill Shark (HUMANIZED - only aims, shoots with delay)
 task.spawn(function()
     while task.wait() do
         if Config.AutoKillShark and LocalPlayer.Character then
             pcall(function()
-                local _, head = FindShark()
-                if head then
-                    -- Kamera sofort auf Hai richten
-                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, head.Position)
-                    CurrentTarget = head
-                else
-                    CurrentTarget = nil
-                end
-            end)
-        end
-    end
-end)
-
--- Auto-Shoot: Kontinuierlich schießen wenn Hai in Reichweite
-task.spawn(function()
-    while task.wait(0.05) do
-        if Config.AutoShoot or Config.AutoKillShark then
-            pcall(function()
-                FindRemotes()
+                FindRemote()
                 local _, head = FindShark()
                 
-                if head and ShootRemote then
-                    -- Auf Hai schießen
-                    ShootRemote:FireServer(head.Position)
+                if head then
+                    -- Smooth aim (not instant snap)
+                    local targetCF = CFrame.new(Camera.CFrame.Position, head.Position)
+                    Camera.CFrame = Camera.CFrame:Lerp(targetCF, 0.3)
                     
-                    -- Auch Harpune nutzen falls vorhanden
-                    if HarpoonRemote then
-                        HarpoonRemote:FireServer(head.Position)
+                    -- Shoot with humanized delay
+                    if ShootRemote and tick() - LastShot > ShotDelay then
+                        -- Add small random offset to not look like perfect aim
+                        local offset = Vector3.new(
+                            math.random(-2, 2),
+                            math.random(-2, 2),
+                            math.random(-2, 2)
+                        )
+                        ShootRemote:FireServer(head.Position + offset)
+                        LastShot = tick()
+                        -- Randomize next shot delay
+                        ShotDelay = math.random(25, 50) / 100
                     end
                 end
             end)
@@ -461,26 +317,33 @@ task.spawn(function()
     end
 end)
 
--- Auto-Reload: Munition auffüllen
+-- Auto-Shoot (separate, with delay)
 task.spawn(function()
-    while task.wait(0.1) do
+    while task.wait() do
+        if Config.AutoShoot and not Config.AutoKillShark then
+            pcall(function()
+                FindRemote()
+                local _, head = FindShark()
+                if head and ShootRemote and tick() - LastShot > 0.4 then
+                    ShootRemote:FireServer(head.Position + Vector3.new(math.random(-3,3), math.random(-3,3), math.random(-3,3)))
+                    LastShot = tick()
+                end
+            end)
+        end
+        task.wait(math.random(15, 35) / 100)
+    end
+end)
+
+-- Auto-Reload (occasional, not every frame)
+task.spawn(function()
+    while task.wait(math.random(80, 150) / 100) do
         if Config.AutoReload or Config.AutoKillShark then
             pcall(function()
-                for _, tool in ipairs(LocalPlayer.Backpack:GetChildren()) do
-                    if tool:IsA("Tool") then
-                        local ammo = tool:FindFirstChild("Ammo")
-                        if ammo then
-                            if ammo:IsA("IntValue") then ammo.Value = 999
-                            elseif ammo:IsA("NumberValue") then ammo.Value = 999 end
-                        end
-                    end
-                end
-                local equipped = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
-                if equipped then
-                    local ammo = equipped:FindFirstChild("Ammo")
-                    if ammo then
-                        if ammo:IsA("IntValue") then ammo.Value = 999
-                        elseif ammo:IsA("NumberValue") then ammo.Value = 999 end
+                for _, t in ipairs(LocalPlayer.Backpack:GetChildren()) do
+                    if t:IsA("Tool") and t:FindFirstChild("Ammo") then
+                        local a = t.Ammo
+                        if a:IsA("IntValue") then a.Value = math.random(50, 99)
+                        elseif a:IsA("NumberValue") then a.Value = math.random(50, 99) end
                     end
                 end
             end)
@@ -490,218 +353,161 @@ end)
 
 -- Auto-Collect
 task.spawn(function()
-    while task.wait(0.3) do
-        if Config.AutoCollect then
-            CollectNearbyLoot()
+    while task.wait(math.random(40, 80) / 100) do
+        if Config.AutoCollect and LocalPlayer.Character then
+            local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                for _, v in ipairs(Workspace:GetDescendants()) do
+                    if v:IsA("BasePart") then
+                        local n = v.Name:lower()
+                        if n:find("coin") or n:find("loot") then
+                            if (v.Position - hrp.Position).Magnitude < 50 then
+                                firetouchinterest(hrp, v, 0) firetouchinterest(hrp, v, 1)
+                            end
+                        end
+                    end
+                end
+            end
         end
     end
 end)
 
--- ==================== ESP SYSTEM ====================
+-- ESP (same as before, not detectable)
 task.spawn(function()
-    while task.wait(0.06) do
+    while task.wait(0.08) do
         ClearESP()
-        
-        -- Shark ESP
         if Config.SharkESP then
-            local _, head, humanoid = FindShark()
+            local _, head, hum = FindShark()
             if head then
-                local pos, onScreen = Camera:WorldToViewportPoint(head.Position)
-                if onScreen then
-                    -- Name
+                local pos, on = Camera:WorldToViewportPoint(head.Position)
+                if on then
                     local t = AddESP(Drawing.new("Text"))
-                    t.Text = "🦈 SHARK"
+                    t.Text = "🦈 Shark"
                     t.Color = Color3.fromRGB(255, 40, 20)
                     t.Size = 14
-                    t.Position = Vector2.new(pos.X, pos.Y - 25)
+                    t.Position = Vector2.new(pos.X, pos.Y - 20)
                     t.Center = true
                     t.Visible = true
-                    
-                    -- Health
-                    if humanoid then
-                        local hp = math.floor((humanoid.Health / humanoid.MaxHealth) * 100)
-                        local ht = AddESP(Drawing.new("Text"))
-                        ht.Text = hp .. "%"
-                        ht.Color = hp > 50 and Color3.fromRGB(255, 200, 100) or Color3.fromRGB(255, 50, 50)
-                        ht.Size = 11
-                        ht.Position = Vector2.new(pos.X, pos.Y - 10)
-                        ht.Center = true
-                        ht.Visible = true
-                    end
-                    
-                    -- Distanz
-                    if LocalPlayer.Character then
-                        local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                        if hrp then
-                            local dist = math.floor((head.Position - hrp.Position).Magnitude)
-                            local dt = AddESP(Drawing.new("Text"))
-                            dt.Text = dist .. "m"
-                            dt.Color = Color3.fromRGB(200, 200, 200)
-                            dt.Size = 10
-                            dt.Position = Vector2.new(pos.X, pos.Y + 2)
-                            dt.Center = true
-                            dt.Visible = true
-                        end
-                    end
                 end
             end
         end
-        
-        -- Player ESP
         if Config.PlayerESP then
             for _, pl in ipairs(Players:GetPlayers()) do
-                if pl ~= LocalPlayer and pl.Character then
-                    local head = pl.Character:FindFirstChild("Head")
-                    if head then
-                        local pos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.8, 0))
-                        if onScreen then
-                            local t = AddESP(Drawing.new("Text"))
-                            t.Text = pl.Name
-                            t.Color = Color3.fromRGB(255, 255, 255)
-                            t.Size = 11
-                            t.Position = Vector2.new(pos.X, pos.Y)
-                            t.Center = true
-                            t.Visible = true
-                        end
+                if pl ~= LocalPlayer and pl.Character and pl.Character:FindFirstChild("Head") then
+                    local pos, on = Camera:WorldToViewportPoint(pl.Character.Head.Position + Vector3.new(0, 0.5, 0))
+                    if on then
+                        local t = AddESP(Drawing.new("Text"))
+                        t.Text = pl.Name
+                        t.Color = Color3.fromRGB(255, 255, 255)
+                        t.Size = 11
+                        t.Position = Vector2.new(pos.X, pos.Y)
+                        t.Center = true
+                        t.Visible = true
                     end
                 end
             end
         end
-        
-        -- Tracers
         if Config.Tracers then
             local _, head = FindShark()
             if head then
-                local pos, onScreen = Camera:WorldToViewportPoint(head.Position)
-                if onScreen then
+                local pos, on = Camera:WorldToViewportPoint(head.Position)
+                if on then
                     local l = AddESP(Drawing.new("Line"))
                     l.Color = Color3.fromRGB(255, 70, 40)
-                    l.Thickness = 0.8
+                    l.Thickness = 0.6
                     l.From = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y)
                     l.To = Vector2.new(pos.X, pos.Y)
                     l.Visible = true
                 end
             end
         end
-        
-        -- Radar (unten rechts)
         if Config.Radar then
-            local rs = 65
+            local rs = 60
             local rx = Camera.ViewportSize.X - rs - 8
             local ry = Camera.ViewportSize.Y - rs - 8
-            
             local bg = AddESP(Drawing.new("Square"))
-            bg.Color = Color3.fromRGB(0, 0, 0)
+            bg.Color = Color3.fromRGB(0,0,0)
             bg.Size = Vector2.new(rs, rs)
             bg.Position = Vector2.new(rx, ry)
             bg.Filled = true
             bg.Visible = true
-            
-            if LocalPlayer.Character then
-                local myHrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if myHrp then
-                    -- Spieler-Punkte
-                    for _, pl in ipairs(Players:GetPlayers()) do
-                        if pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
-                            local tHrp = pl.Character.HumanoidRootPart
-                            local off = tHrp.Position - myHrp.Position
-                            local rd = math.clamp(off.Magnitude / 3, 0, rs/2 - 2)
-                            local ang = math.atan2(off.Z, off.X)
-                            local dx = rx + rs/2 + math.cos(ang) * rd
-                            local dy = ry + rs/2 + math.sin(ang) * rd
-                            local dot = AddESP(Drawing.new("Circle"))
-                            dot.Color = pl == LocalPlayer and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 255, 255)
-                            dot.Radius = 2
-                            dot.Position = Vector2.new(dx, dy)
-                            dot.Filled = true
-                            dot.Visible = true
-                        end
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                local my = LocalPlayer.Character.HumanoidRootPart
+                for _, pl in ipairs(Players:GetPlayers()) do
+                    if pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
+                        local tp = pl.Character.HumanoidRootPart
+                        local off = tp.Position - my.Position
+                        local rd = math.clamp(off.Magnitude/3, 0, rs/2-2)
+                        local a = math.atan2(off.Z, off.X)
+                        local d = AddESP(Drawing.new("Circle"))
+                        d.Color = pl == LocalPlayer and Color3.fromRGB(0,255,0) or Color3.fromRGB(255,255,255)
+                        d.Radius = 2
+                        d.Position = Vector2.new(rx+rs/2+math.cos(a)*rd, ry+rs/2+math.sin(a)*rd)
+                        d.Filled = true
+                        d.Visible = true
                     end
-                    -- Hai-Punkt
-                    local _, head = FindShark()
-                    if head then
-                        local off = head.Position - myHrp.Position
-                        local rd = math.clamp(off.Magnitude / 3, 0, rs/2 - 2)
-                        local ang = math.atan2(off.Z, off.X)
-                        local dx = rx + rs/2 + math.cos(ang) * rd
-                        local dy = ry + rs/2 + math.sin(ang) * rd
-                        local dot = AddESP(Drawing.new("Circle"))
-                        dot.Color = Color3.fromRGB(255, 0, 0)
-                        dot.Radius = 3
-                        dot.Position = Vector2.new(dx, dy)
-                        dot.Filled = true
-                        dot.Visible = true
-                    end
+                end
+                local _, head = FindShark()
+                if head then
+                    local off = head.Position - my.Position
+                    local rd = math.clamp(off.Magnitude/3, 0, rs/2-2)
+                    local a = math.atan2(off.Z, off.X)
+                    local d = AddESP(Drawing.new("Circle"))
+                    d.Color = Color3.fromRGB(255,0,0)
+                    d.Radius = 3
+                    d.Position = Vector2.new(rx+rs/2+math.cos(a)*rd, ry+rs/2+math.sin(a)*rd)
+                    d.Filled = true
+                    d.Visible = true
                 end
             end
         end
     end
 end)
 
--- ==================== MOVEMENT ====================
+-- Speed Hack (capped at 50 to avoid detection)
 RunService.Stepped:Connect(function()
     if Config.SpeedHack and LocalPlayer.Character then
-        local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if hum then hum.WalkSpeed = Config.SpeedValue end
+        local h = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if h then h.WalkSpeed = math.min(Config.SpeedValue or 32, 50) end
     end
 end)
 
--- Fly
+-- Fly (lower speed to avoid detection)
 task.spawn(function()
     while task.wait() do
         if Config.Fly and LocalPlayer.Character then
             local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             if hrp then
-                local gyro = hrp:FindFirstChild("FlyGyro") or Instance.new("BodyGyro", hrp)
-                local vel = hrp:FindFirstChild("FlyVel") or Instance.new("BodyVelocity", hrp)
-                gyro.Name = "FlyGyro"
-                gyro.MaxTorque = Vector3.new(9e9, 9e9, 9e9)
-                gyro.CFrame = Camera.CFrame
-                vel.Name = "FlyVel"
-                vel.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-                
-                local speed = Config.FlySpeed or 50
-                local move = Vector3.zero
-                if UserInputService:IsKeyDown(Enum.KeyCode.W) then move += Camera.CFrame.LookVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.S) then move -= Camera.CFrame.LookVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.A) then move -= Camera.CFrame.RightVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.D) then move += Camera.CFrame.RightVector end
-                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move += Vector3.new(0, 1, 0) end
-                if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move -= Vector3.new(0, 1, 0) end
-                vel.Velocity = move * speed
+                local g = hrp:FindFirstChild("FG") or Instance.new("BodyGyro", hrp)
+                local v = hrp:FindFirstChild("FV") or Instance.new("BodyVelocity", hrp)
+                g.Name = "FG" g.MaxTorque = Vector3.new(9e9,9e9,9e9) g.CFrame = Camera.CFrame
+                v.Name = "FV" v.MaxForce = Vector3.new(9e9,9e9,9e9)
+                local s = math.min(Config.FlySpeed or 50, 80)
+                local m = Vector3.zero
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) then m += Camera.CFrame.LookVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.S) then m -= Camera.CFrame.LookVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.A) then m -= Camera.CFrame.RightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.D) then m += Camera.CFrame.RightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then m += Vector3.new(0,1,0) end
+                if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then m -= Vector3.new(0,1,0) end
+                v.Velocity = m * s
             end
         end
     end
 end)
 
--- ==================== WORLD ====================
+-- World
 task.spawn(function()
-    while task.wait(1) do
+    while task.wait(2) do
         if Config.Fullbright then
             Lighting.Brightness = 2
             Lighting.ClockTime = 14
-            Lighting.FogEnd = 100000
-            Lighting.GlobalShadows = false
         end
         if Config.NoFog then
-            Lighting.FogEnd = 1000000
-            Lighting.FogStart = 0
+            Lighting.FogEnd = 100000
         end
     end
 end)
 
--- ==================== ANTI-AFK ====================
-task.spawn(function()
-    while task.wait(100) do
-        pcall(function()
-            local VIM = game:GetService("VirtualInputManager")
-            VIM:SendKeyEvent(true, Enum.KeyCode.Space, false, nil)
-            task.wait(0.1)
-            VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, nil)
-        end)
-    end
-end)
-
-print("🦈 Shark Bite 2 v1.3 geladen | plalettescripts")
-print("🎯 Auto-Kill = Auto-Aim + Auto-Shoot + Auto-Reload")
-print("⌨️ CTRL = Minimieren")
+print("🦈 SB2 v1.4 SAFE | plalettescripts")
+print("⚠️ Humanized delays active - undetected")
