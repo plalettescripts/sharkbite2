@@ -794,39 +794,23 @@ end)
 SettingsTab:AddToggle("FPS Optimizer", "FPSOptimizer")
 SettingsTab:AddDropdown("Sprache", "Language", {"DE", "EN", "FR", "ES"}, "DE")
 
--- Credits im Settings Tab
-local CreditFrame = Instance.new("Frame")
-CreditFrame.Size = UDim2.new(1, -4, 0, 100)
-CreditFrame.BackgroundColor3 = Color3.fromRGB(26, 28, 38)
-CreditFrame.Parent = SettingsTab.Content or ContentFrame
-Instance.new("UICorner", CreditFrame).CornerRadius = UDim.new(0, 6)
+-- Settings Tab - Version Info (klein, kein Block)
+local VerFrame = Instance.new("Frame")
+VerFrame.Size = UDim2.new(1, -4, 0, 20)
+VerFrame.BackgroundColor3 = Color3.fromRGB(26, 28, 38)
+VerFrame.Parent = SettingsTab.Content
+Instance.new("UICorner", VerFrame).CornerRadius = UDim.new(0, 4)
 
-local CreditText = Instance.new("TextLabel")
-CreditText.Size = UDim2.new(1, -16, 1, -16)
-CreditText.Position = UDim2.new(0, 8, 0, 8)
-CreditText.BackgroundTransparency = 1
-CreditText.TextColor3 = Color3.fromRGB(200, 200, 220)
-CreditText.Text = [[
-🦈 Shark Bite 2 Ultimate
-
-Created by: plalettescripts
-
-Features:
-- Auto Kill Shark (Instant)
-- ESP & Visuals
-- Teleport System
-- Boat Hacks
-- Shark Mode
-- And much more...
-
-Made by Plalette
-]]
-CreditText.Font = Enum.Font.SourceSans
-CreditText.TextSize = 10
-CreditText.TextXAlignment = Enum.TextXAlignment.Left
-CreditText.TextYAlignment = Enum.TextYAlignment.Top
-CreditText.TextWrapped = true
-CreditText.Parent = CreditFrame
+local VerLabel = Instance.new("TextLabel")
+VerLabel.Size = UDim2.new(1, -8, 1, 0)
+VerLabel.Position = UDim2.new(0, 4, 0, 0)
+VerLabel.BackgroundTransparency = 1
+VerLabel.TextColor3 = Color3.fromRGB(150, 150, 170)
+VerLabel.Text = "v1.0 | plalettescripts | Shark Bite 2"
+VerLabel.Font = Enum.Font.SourceSans
+VerLabel.TextSize = 10
+VerLabel.TextXAlignment = Enum.TextXAlignment.Left
+VerLabel.Parent = VerFrame
 
 -- ==================== 5. AUTO KILL SHARK - 0ms ====================
 task.spawn(function()
